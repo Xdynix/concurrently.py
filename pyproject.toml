@@ -20,6 +20,7 @@ distribution = true
 [tool.pdm.dev-dependencies]
 lint = [
     "pre-commit>=3.8.0",
+    "mypy>=1.11.1",
 ]
 
 [tool.pdm.scripts.post_install]
