@@ -4,7 +4,15 @@ A minimum Python port of Node.js's [`concurrently`][concurrently].
 
 ## Installation
 
-(TODO)
+```shell
+pipx install git+https://github.com/Xdynix/concurrently.py.git
+```
+
+## Usage
+
+```shell
+concurrentlypy "python3 manage.py runserver" "python3 manage.py runworker"
+```
 
 ## Development
 
