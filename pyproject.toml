@@ -1,0 +1,18 @@
+[project]
+name = "concurrentlypy"
+version = "0.1.0"
+description = "A minimum Python port of Node.js's `concurrently` tool."
+authors = [
+    {name = "Xdynix", email = "Lizard.rar@gmail.com"},
+]
+dependencies = []
+requires-python = ">=3.10.0"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+distribution = true
