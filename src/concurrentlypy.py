@@ -1,12 +1,12 @@
 """A minimum Python port of Node.js's `concurrently` tool."""
 
-import shlex
+import asyncio
+import os
 import signal
 import subprocess
 import sys
 from argparse import ArgumentParser, Namespace
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from threading import Event
+from contextlib import suppress
 
 
 def parse_args() -> Namespace:
@@ -28,45 +28,106 @@ def parse_args() -> Namespace:
         action="store_true",
         help="Kill other processes if one exits with non zero status code.",
     )
+    parser.add_argument(
+        "--hard-kill-wait",
+        type=float,
+        default=5.0,
+        help=(
+            "Time in seconds to wait for a graceful shutdown before hard kill. "
+            "Set to 0 to disable forced kill."
+        ),
+    )
     return parser.parse_args()
 
 
-def run_command(command: str, stop_event: Event) -> int | None:
-    """Run a single command. Return its exit code. Or `None` if terminated."""
-    with subprocess.Popen(shlex.split(command)) as proc:  # noqa: S603
-        while not stop_event.wait(0.1) and proc.poll() is None:
-            pass
+async def run_command(
+    command: str,
+    hard_kill_wait: float,
+    stop_event: asyncio.Event,
+) -> int | None:
+    """Run a single command. Return its exit code."""
+    if sys.platform == "win32":
+        creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+        pre_exec_fn = None
+    else:
+        creation_flags = 0
+        pre_exec_fn = os.setsid
+
+    proc = await asyncio.create_subprocess_shell(
+        command,
+        preexec_fn=pre_exec_fn,
+        creationflags=creation_flags,
+    )
+
+    interrupted = False
+    try:
+        while True:
+            if stop_event.is_set():
+                interrupted = True
+                break
+            with suppress(TimeoutError):
+                return await asyncio.wait_for(proc.wait(), timeout=0.1)
+    finally:
+        if interrupted or stop_event.is_set():
+            if sys.platform == "win32":
+                proc.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+
+            if hard_kill_wait > 0:
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=hard_kill_wait)
+                except TimeoutError:
+                    proc.kill()
+
+    return None
+
+
+async def a_main() -> None:
+    args = parse_args()
+    stop_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
         if sys.platform == "win32":
-            proc.send_signal(signal.CTRL_C_EVENT)
+            signal.signal(sig, lambda _, __: stop_event.set())
         else:
-            proc.terminate()
-    return proc.poll()
+            loop.add_signal_handler(sig, stop_event.set)
+
+    tasks: list[asyncio.Task[int | None]] = []
+
+    async with asyncio.TaskGroup() as tg:
+        for command in args.commands:
+            tasks.append(
+                tg.create_task(run_command(command, args.hard_kill_wait, stop_event))
+            )
+
+        while not stop_event.is_set():
+            for task in tasks:
+                if not task.done():
+                    continue
+                ret = task.result()
+                if args.kill_others or (
+                    args.kill_others_on_fail and ret not in (0, None)
+                ):
+                    stop_event.set()
+                    for t in tasks:
+                        t.cancel()
+                    break
+            if all(task.done() for task in tasks):
+                break
+            await asyncio.sleep(0.1)
+
+    for task in tasks:
+        if task.cancelled():
+            continue
+        ret = task.result()
+        if ret not in (0, None):
+            sys.exit(ret)
 
 
 def main() -> None:
-    args = parse_args()
-
-    stop_event = Event()
-
-    def done_callback(f: Future[int | None]) -> None:
-        result = f.result()
-        if args.kill_others or args.kill_others_on_fail and result not in (0, None):
-            stop_event.set()
-
-    futures: list[Future[int | None]] = []
-    try:
-        commands: list[str] = args.commands
-        with ThreadPoolExecutor(max_workers=len(commands)) as executor:
-            for command in commands:
-                future = executor.submit(run_command, command, stop_event)
-                futures.append(future)
-                future.add_done_callback(done_callback)
-    except KeyboardInterrupt:
-        stop_event.set()
-
-    for future in as_completed(futures):
-        if future.result() not in (0, None):
-            sys.exit(future.result())
+    asyncio.run(a_main())
 
 
 if __name__ == "__main__":
