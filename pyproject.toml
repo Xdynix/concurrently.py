@@ -1,6 +1,6 @@
 [project]
 name = "concurrentlypy"
-version = "0.1.0"
+version = "0.2.0"
 description = "A minimum Python port of Node.js's `concurrently` tool."
 authors = [
     {name = "Xdynix", email = "Lizard.rar@gmail.com"},
@@ -45,10 +45,11 @@ select = [
     "E", # pycodestyle errors
     "W", # pycodestyle warnings
     "I", # isort
+    "PGH", # pygrep-hooks
     "UP", # pyupgrade
     "S", # flake8-bandit
     "B", # flake8-bugbear
-    "C", # flake8-comprehensions
+    "C4", # flake8-comprehensions
     "DJ", # flake8-django
     "T20", # flake8-print
     "SIM", # flake8-simplify
