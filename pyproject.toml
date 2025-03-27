@@ -19,8 +19,8 @@ concurrentlypy = "concurrentlypy:main"
 
 [dependency-groups]
 lint = [
-    "pre-commit>=4.0.1",
-    "mypy>=1.13.0",
+    "pre-commit>=4.2.0",
+    "mypy>=1.15.0",
 ]
 
 [tool.pdm]
